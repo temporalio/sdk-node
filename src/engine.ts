@@ -3,6 +3,7 @@ import dedent from 'dedent';
 import { Loader } from './loader';
 import { ActivityOptions } from './activity';
 import { Scheduler } from './scheduler';
+import '../build/Release/temporalio-workflow-runtime.node';
 
 export enum ApplyMode {
   ASYNC = 'apply',
@@ -32,34 +33,35 @@ export class Workflow {
     const context = await isolate.createContext();
     const workflow = new Workflow(isolate, context, scheduler);
 
+    await workflow.registerWorkflowRuntime();
     // Delete any weak reference holding structures because GC is non-deterministic.
     // WeakRef is implemented in V8 8.4 which is embedded in node >=14.6.0, delete it just in case.
     await context.eval(dedent`
-      globalThis.activities = {};
       delete globalThis.WeakMap;
       delete globalThis.WeakSet;
       delete globalThis.WeakRef;
+      globalThis.setTimeout = runtime.timeout;
     `);
-    await workflow.injectTimers();
+    // await workflow.injectTimers();
     await workflow.injectActivityStub();
     await workflow.registerWorkflowModule();
     return workflow;
   }
 
-  private async injectTimers() {
-    const scheduler = this.scheduler;
-    function createTimer(callback: ivm.Reference<Function>, msRef: ivm.Reference<number>, ...args: ivm.Reference<any>[]) {
-      const ms = msRef.copySync();
-      return scheduler.enqueueEvent({
-        type: 'TimerStart',
-        ms,
-        callback: () => callback.apply(undefined, args),
-      });
-    }
-    await this.inject('setTimeout', createTimer, ApplyMode.SYNC, { arguments: { reference: true } });
-  }
+  // private async injectTimers() {
+  //   const scheduler = this.scheduler;
+  //   function createTimer(callback: ivm.Reference<Function>, msRef: ivm.Reference<number>, ...args: ivm.Reference<any>[]) {
+  //     const ms = msRef.copySync();
+  //     return scheduler.enqueueEvent({
+  //       type: 'TimerStart',
+  //       ms,
+  //       callback: () => callback.apply(undefined, args),
+  //     });
+  //   }
+  //   await this.inject('setTimeout', createTimer, ApplyMode.SYNC, { arguments: { reference: true } });
+  // }
 
-  public async injectActivityStub() {
+  private async injectActivityStub() {
     const scheduler = this.scheduler;
     const activities = this.activities;
 
@@ -120,7 +122,13 @@ export class Workflow {
     }
   }
 
-  public async registerWorkflowModule() {
+  private async registerWorkflowRuntime() {
+    const runtime = new ivm.NativeModule(require.resolve('../build/Release/temporalio-workflow-runtime.node'));
+    const instance = await runtime.create(this.context);
+    this.context.global.set('runtime', instance.derefInto());
+  }
+
+  private async registerWorkflowModule() {
     const specifier = '@temporal-sdk/workflow';
     const code = dedent`
       export const Context = {

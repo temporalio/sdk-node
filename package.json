@@ -5,6 +5,7 @@
   "main": "lib/index.js",
   "types": "./lib/index.d.ts",
   "scripts": {
+    "install": "node-gyp rebuild --release",
     "build": "(cd test && tsc --build)",
     "build.watch": "(cd test && tsc --build --watch)",
     "lint": "eslint src --ext .ts",
@@ -12,6 +13,7 @@
     "test.watch": "ava -w test/lib/test*.js",
     "clean": "find . -name tsconfig.tsbuildinfo -delete && find . -name lib -maxdepth 2 | xargs rm -rf"
   },
+  "gypfile": true,
   "keywords": [],
   "author": "Roey Berman <roey@temporal.io>",
   "license": "ISC",
@@ -31,6 +33,7 @@
   "dependencies": {
     "dedent": "^0.7.0",
     "isolated-vm": "^3.3.7",
+    "nan": "^2.14.2",
     "seedrandom": "^3.0.5"
   }
 }
