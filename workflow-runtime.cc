@@ -1,6 +1,7 @@
 #include <nan.h>
 #include <isolated_vm.h>
 
+#include <iostream>
 #include <chrono>
 #include <thread>
 
@@ -35,7 +36,9 @@ NAN_METHOD(timeout) {
 	std::thread timeout_thread([=]() mutable {
 		// Note that in this closure it is not safe to call into The only thing you can do is
 		// schedule a task.
+        std::cout << "set timer: " << ms << std::endl;
 		std::this_thread::sleep_for(std::chrono::milliseconds(ms));
+        std::cout << "called after: " << ms << std::endl;
 		isolate_holder.ScheduleTask(std::make_unique<TimeoutCallback>(std::move(context), std::move(fn)));
 	});
 	timeout_thread.detach();

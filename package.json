@@ -32,7 +32,7 @@
   },
   "dependencies": {
     "dedent": "^0.7.0",
-    "isolated-vm": "^3.3.7",
+    "isolated-vm": "file://../isolated-vm",
     "nan": "^2.14.2",
     "seedrandom": "^3.0.5"
   }
