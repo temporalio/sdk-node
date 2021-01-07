@@ -46,8 +46,18 @@ NAN_METHOD(timeout) {
 	info.GetReturnValue().Set(Nan::Undefined());
 }
 
+NAN_METHOD(random) {
+	info.GetReturnValue().Set(Nan::New(0.1));
+}
+
+NAN_METHOD(date) {
+	info.GetReturnValue().Set(Nan::New(100000));
+}
+
 ISOLATED_VM_MODULE void InitForContext(Isolate* isolate, Local<Context> context, Local<Object> target) {
 	Nan::Set(target, Nan::New("timeout").ToLocalChecked(), Nan::GetFunction(Nan::New<FunctionTemplate>(timeout)).ToLocalChecked());
+	Nan::Set(target, Nan::New("random").ToLocalChecked(), Nan::GetFunction(Nan::New<FunctionTemplate>(random)).ToLocalChecked());
+	Nan::Set(target, Nan::New("date").ToLocalChecked(), Nan::GetFunction(Nan::New<FunctionTemplate>(date)).ToLocalChecked());
 }
 
 NAN_MODULE_INIT(init) {
