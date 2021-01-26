@@ -2,7 +2,10 @@ mod mock_core;
 
 use neon::{prelude::*, register_module};
 use std::{cell::RefCell, collections::VecDeque, sync::Arc};
-use temporal_sdk_core::protos::coresdk::{poll_sdk_task_resp::Task::WfTask, PollSdkTaskResp, *};
+use temporal_sdk_core::{
+    protos::coresdk::{poll_sdk_task_resp::Task::WfTask, PollSdkTaskResp, *},
+    CoreSDKService,
+};
 
 type BoxedWorker = JsBox<RefCell<Worker>>;
 
