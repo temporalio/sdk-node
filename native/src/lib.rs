@@ -1,11 +1,8 @@
 mod mock_core;
 
-use ::neon::prelude::*;
-use ::neon::register_module;
-use ::std::cell::RefCell;
-use ::temporal_sdk_core::protos::coresdk::poll_sdk_task_resp::Task::WfTask;
-use ::temporal_sdk_core::protos::coresdk::PollSdkTaskResp;
-use ::temporal_sdk_core::protos::coresdk::*;
+use neon::{prelude::*, register_module};
+use std::{cell::RefCell, collections::VecDeque, sync::Arc};
+use temporal_sdk_core::protos::coresdk::{poll_sdk_task_resp::Task::WfTask, PollSdkTaskResp, *};
 
 type BoxedWorker = JsBox<RefCell<Worker>>;
 
@@ -19,26 +16,25 @@ impl Finalize for Worker {}
 
 impl Worker {
     pub fn new(queue_name: String) -> Self {
-        let mut tasks = ::std::collections::VecDeque::<poll_sdk_task_resp::Task>::new();
+        let mut tasks = VecDeque::<poll_sdk_task_resp::Task>::new();
         tasks.push_back(WfTask(SdkwfTask {
             r#type: WfTaskType::StartWorkflow as i32,
             workflow_id: "test".to_string(),
             timestamp: None,
-            attributes: Some(sdkwf_task::Attributes::StartWorkflowTaskAttributes(
+            attributes: Some(
                 StartWorkflowTaskAttributes {
                     namespace: "default".to_string(),
                     name: "main".to_string(),
                     arguments: None,
-                },
-            )),
+                }
+                .into(),
+            ),
         }));
         tasks.push_back(WfTask(SdkwfTask {
             r#type: WfTaskType::CompleteTimer as i32,
             workflow_id: "test".to_string(),
             timestamp: None,
-            attributes: Some(sdkwf_task::Attributes::CompleteTimerTaskAttributes(
-                CompleteTimerTaskAttributes { timer_id: 0 },
-            )),
+            attributes: Some(CompleteTimerTaskAttributes { timer_id: 0 }.into()),
         }));
         let core = mock_core::MockCore { tasks };
 
@@ -48,7 +44,7 @@ impl Worker {
         }
     }
 
-    pub fn poll(&mut self) -> ::temporal_sdk_core::Result<PollSdkTaskResp> {
+    pub fn poll(&mut self) -> temporal_sdk_core::Result<PollSdkTaskResp> {
         let res = self.core.poll_sdk_task();
         self.core.tasks.pop_front();
         res
@@ -66,7 +62,7 @@ fn worker_poll(mut cx: FunctionContext) -> JsResult<JsUndefined> {
     let worker = cx.argument::<BoxedWorker>(0)?;
     let callback = cx.argument::<JsFunction>(1)?.root(&mut cx);
     let mut worker = worker.borrow_mut().clone();
-    let arc_callback = ::std::sync::Arc::new(callback);
+    let arc_callback = Arc::new(callback);
     let queue = cx.queue();
     std::thread::spawn(move || loop {
         let arc_callback = arc_callback.clone();
@@ -74,7 +70,7 @@ fn worker_poll(mut cx: FunctionContext) -> JsResult<JsUndefined> {
         match response_option {
             Ok(response) => {
                 queue.send(move |mut cx| {
-                    if let Ok(r) = ::std::sync::Arc::try_unwrap(arc_callback) {
+                    if let Ok(r) = Arc::try_unwrap(arc_callback) {
                         let callback = r.clone(&mut cx).into_inner(&mut cx);
                         let this = cx.undefined();
                         let error = cx.undefined();
@@ -87,7 +83,7 @@ fn worker_poll(mut cx: FunctionContext) -> JsResult<JsUndefined> {
             }
             Err(_) => {
                 queue.send(move |mut cx| {
-                    if let Ok(r) = ::std::sync::Arc::try_unwrap(arc_callback) {
+                    if let Ok(r) = Arc::try_unwrap(arc_callback) {
                         // Original root callback gets dropped
                         let callback = r.into_inner(&mut cx);
                         let this = cx.undefined();
@@ -120,7 +116,8 @@ fn poll_sdk_task_resp_to_js_object<'a, 'b>(
     };
     match &response.task {
         Some(WfTask(task)) => {
-            let task_type: WfTaskType = unsafe { std::mem::transmute(task.r#type) };
+            // Todo: handle unknown task types
+            let task_type = WfTaskType::from_i32(task.r#type).unwrap();
             let type_str = cx.string(format!("{:?}", task_type));
             result.set(cx, "type", type_str)?;
             let workflow_id = cx.string(task.workflow_id.clone());
