@@ -1,3 +1,4 @@
+use std::{collections::VecDeque, sync::RwLock};
 use temporal_sdk_core::{
     protos::coresdk::{
         poll_sdk_task_resp::Task, CompleteSdkTaskReq, PollSdkTaskResp, RegistrationReq,
@@ -6,14 +7,26 @@ use temporal_sdk_core::{
     SDKServiceError::Unknown,
 };
 
-#[derive(Clone)]
 pub struct MockCore {
-    pub tasks: ::std::collections::VecDeque<Task>,
+    tasks: RwLock<VecDeque<Task>>,
+}
+
+impl MockCore {
+    pub fn new(taskq: VecDeque<Task>) -> Self {
+        Self {
+            tasks: RwLock::new(taskq),
+        }
+    }
 }
 
 impl CoreSDKService for MockCore {
     fn poll_sdk_task(&self) -> Result<PollSdkTaskResp> {
-        match self.tasks.get(0) {
+        match self
+            .tasks
+            .write()
+            .expect("Must be able to grab lock in mock core")
+            .pop_front()
+        {
             Some(task) => Result::Ok(PollSdkTaskResp {
                 task_token: b"abc".to_vec(),
                 task: Some(task.clone()),

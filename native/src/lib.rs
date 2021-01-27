@@ -1,5 +1,6 @@
 mod mock_core;
 
+use crate::mock_core::MockCore;
 use neon::{prelude::*, register_module};
 use std::{cell::RefCell, collections::VecDeque, sync::Arc};
 use temporal_sdk_core::{
@@ -12,7 +13,7 @@ type BoxedWorker = JsBox<RefCell<Worker>>;
 #[derive(Clone)]
 pub struct Worker {
     _queue_name: String,
-    core: mock_core::MockCore,
+    core: Arc<dyn CoreSDKService>,
 }
 
 impl Finalize for Worker {}
@@ -39,17 +40,16 @@ impl Worker {
             timestamp: None,
             attributes: Some(CompleteTimerTaskAttributes { timer_id: 0 }.into()),
         }));
-        let core = mock_core::MockCore { tasks };
+        let core = MockCore::new(tasks);
 
         Worker {
             _queue_name: queue_name,
-            core,
+            core: Arc::new(core),
         }
     }
 
     pub fn poll(&mut self) -> temporal_sdk_core::Result<PollSdkTaskResp> {
         let res = self.core.poll_sdk_task();
-        self.core.tasks.pop_front();
         res
     }
 }
