@@ -1,7 +1,7 @@
 import { resolve } from 'path';
 import { Observable, partition } from 'rxjs';
 import { groupBy, mapTo, mergeMap } from 'rxjs/operators';
-import { coresdk } from '@temporalio/proto';
+import { coresdk, temporal } from '@temporalio/proto';
 import {
   newWorker,
   workerShutdown,
@@ -161,28 +161,67 @@ export class Worker {
           return group$.pipe(
             mergeMapWithState(async (workflow: Workflow | undefined, task) => {
               if (workflow === undefined) {
-                // Find a workflow start job in the activation jobs list
-                // TODO: should this always be the first job in the list?
-                const maybeStartWorkflow = task.workflow.jobs.find((j) => j.startWorkflow);
-                if (maybeStartWorkflow !== undefined) {
-                  const attrs = maybeStartWorkflow.startWorkflow;
-                  if (!(attrs && attrs.workflowId && attrs.workflowType)) {
+                try {
+                  // Find a workflow start job in the activation jobs list
+                  // TODO: should this always be the first job in the list?
+                  const maybeStartWorkflow = task.workflow.jobs.find((j) => j.startWorkflow);
+                  if (maybeStartWorkflow !== undefined) {
+                    const attrs = maybeStartWorkflow.startWorkflow;
+                    if (!(attrs && attrs.workflowId && attrs.workflowType)) {
+                      throw new Error(
+                        `Expected StartWorkflow with workflowId and workflowType, got ${JSON.stringify(
+                          maybeStartWorkflow
+                        )}`
+                      );
+                    }
+                    workflow = await Workflow.create(attrs.workflowId);
+                    // TODO: this probably shouldn't be here, consider alternative implementation
+                    await workflow.inject('console.log', console.log);
+                    const scriptName = await resolver(
+                      this.options.workflowsPath,
+                      this.workflowOverrides
+                    )(attrs.workflowType);
+                    await workflow.registerImplementation(scriptName);
+                  } else {
                     throw new Error(
-                      `Expected StartWorkflow with workflowId and workflowType, got ${JSON.stringify(
-                        maybeStartWorkflow
-                      )}`
+                      'Received workflow activation for an untracked workflow with no start workflow job'
                     );
                   }
-                  workflow = await Workflow.create(attrs.workflowId);
-                  // TODO: this probably shouldn't be here, consider alternative implementation
-                  await workflow.inject('console.log', console.log);
-                  const scriptName = await resolver(
-                    this.options.workflowsPath,
-                    this.workflowOverrides
-                  )(attrs.workflowType);
-                  await workflow.registerImplementation(scriptName);
-                } else {
-                  throw new Error('Received workflow activation for an untracked workflow with no start workflow job');
+                } catch (err) {
+                  let arr: Uint8Array;
+                  if (err instanceof LoaderError) {
+                    arr = coresdk.TaskCompletion.encodeDelimited({
+                      taskToken: task.taskToken,
+                      workflow: {
+                        successful: {
+                          commands: [
+                            {
+                              api: {
+                                commandType: temporal.api.enums.v1.CommandType.COMMAND_TYPE_FAIL_WORKFLOW_EXECUTION,
+                                failWorkflowExecutionCommandAttributes: {
+                                  failure: { message: err.message /* TODO: stack trace */ },
+                                },
+                              },
+                            },
+                          ],
+                        },
+                      },
+                    }).finish();
+                  } else {
+                    const cause = temporal.api.enums.v1.WorkflowTaskFailedCause.WORKFLOW_TASK_FAILED_CAUSE_UNSPECIFIED;
+                    arr = coresdk.TaskCompletion.encodeDelimited({
+                      taskToken: task.taskToken,
+                      workflow: {
+                        failed: {
+                          cause,
+                          failure: { message: err.message /* TODO: stack trace */ },
+                        },
+                      },
+                    }).finish();
+                  }
+                  workerCompleteTask(native, arr.buffer.slice(arr.byteOffset));
+                  workflow?.isolate.dispose();
+                  return { state: undefined, output: arr };
                 }
               }
 
